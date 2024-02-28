@@ -1,0 +1,35 @@
+{
+	"nodes":[
+		{"id":"04db560adf1f6eb7","type":"file","file":"基于PYNQ的SoC设计入门/7 FIFO实验.md","x":2302,"y":-299,"width":400,"height":400},
+		{"id":"01ef15c5cbe2ca5d","type":"file","file":"基于PYNQ的SoC设计入门/6 串口收发实验.md","x":1707,"y":-289,"width":400,"height":400},
+		{"id":"40f6f113d4d86575","type":"text","text":"嵌入式开发入门：\n1. Vitis工具使用\n2. 从helloworld开始","x":380,"y":-280,"width":260,"height":125},
+		{"id":"da1c2162f8ca1296","type":"text","text":"硬件：PYNQ_Z2\n开发工具：Vivado、Vitis、Petainux\n文档：正点原子三部曲","x":-120,"y":-85,"width":325,"height":110},
+		{"id":"8f1ea5a2908fca9c","type":"text","text":"1. Verilog语言基础\n2. ZYNQ基础知识\n3. Vivado工具的使用\n4. PL端IP核打包与使用\n","x":375,"y":-85,"width":260,"height":110},
+		{"id":"05cb6e25fc7e89eb","type":"text","text":"Linux嵌入式开发","x":380,"y":160,"width":250,"height":60},
+		{"id":"8422609dbc492f8a","type":"file","file":"基于PYNQ的SoC设计入门/3 PetaLinux系统启动与嵌入式开发流程描述.md","x":310,"y":641,"width":400,"height":400},
+		{"id":"0530f209d8510758","type":"file","file":"基于PYNQ的SoC设计入门/4 设备树知识.md","x":1044,"y":641,"width":400,"height":400},
+		{"id":"810e9963ad382030","type":"file","file":"基于PYNQ的SoC设计入门/5 Petalinux创建应用 脚本.md","x":1720,"y":641,"width":400,"height":400},
+		{"id":"596d24264a31f6b7","type":"file","file":"基于PYNQ的SoC设计入门/0 写在前面.md","x":1044,"y":160,"width":400,"height":400},
+		{"id":"25a4967184096567","type":"file","file":"基于PYNQ的SoC设计入门/2 在ZYNQ上启动Petalinux定制Linux系统（最小与自定义）.md","x":1720,"y":160,"width":400,"height":400},
+		{"id":"52bd989999c03b82","type":"file","file":"基于PYNQ的SoC设计入门/1 初识ZYNQ.md","x":1044,"y":-280,"width":400,"height":400},
+		{"id":"c4c00d4be398eaaa","type":"text","text":"深度学习部署\n文档：哈工深2021深度学习体系结构\n开发工具：Vitis_HLS","x":-559,"y":-80,"width":301,"height":140},
+		{"id":"66acfcce172eb4d1","type":"file","file":"ZYNQ下深度学习部署/1 入门.md","x":-608,"y":241,"width":400,"height":400},
+		{"id":"9eb9f44bc0125074","type":"file","file":"基于PYNQ的SoC设计入门/2.2 分别编译制作SD启动盘.pdf","x":2327,"y":156,"width":400,"height":400}
+	],
+	"edges":[
+		{"id":"fc7e442426911661","fromNode":"da1c2162f8ca1296","fromSide":"right","toNode":"8f1ea5a2908fca9c","toSide":"left","label":"FPGA入门"},
+		{"id":"c5fdbae6cbc17b78","fromNode":"da1c2162f8ca1296","fromSide":"top","toNode":"40f6f113d4d86575","toSide":"left"},
+		{"id":"31d35397aca70f4a","fromNode":"da1c2162f8ca1296","fromSide":"bottom","toNode":"05cb6e25fc7e89eb","toSide":"left"},
+		{"id":"39e42638503ab477","fromNode":"05cb6e25fc7e89eb","fromSide":"right","toNode":"596d24264a31f6b7","toSide":"left","label":"实践"},
+		{"id":"c64250a25e8ce770","fromNode":"596d24264a31f6b7","fromSide":"right","toNode":"25a4967184096567","toSide":"left","label":"照着文档3实现"},
+		{"id":"32add65ee951c939","fromNode":"05cb6e25fc7e89eb","fromSide":"bottom","toNode":"8422609dbc492f8a","toSide":"top","label":"理论"},
+		{"id":"9b68d1d536852f19","fromNode":"8422609dbc492f8a","fromSide":"right","toNode":"0530f209d8510758","toSide":"left"},
+		{"id":"19af7b6e12ac02f1","fromNode":"0530f209d8510758","fromSide":"right","toNode":"810e9963ad382030","toSide":"left"},
+		{"id":"9eaf216370a5bf66","fromNode":"8f1ea5a2908fca9c","fromSide":"right","toNode":"52bd989999c03b82","toSide":"left"},
+		{"id":"a2025bc060df7fa7","fromNode":"da1c2162f8ca1296","fromSide":"left","toNode":"c4c00d4be398eaaa","toSide":"right"},
+		{"id":"32e5199146e6b4b3","fromNode":"c4c00d4be398eaaa","fromSide":"bottom","toNode":"66acfcce172eb4d1","toSide":"top"},
+		{"id":"4cbb48f1c9fc6445","fromNode":"52bd989999c03b82","fromSide":"right","toNode":"01ef15c5cbe2ca5d","toSide":"left","label":"PL端"},
+		{"id":"6712c7eef59b9179","fromNode":"01ef15c5cbe2ca5d","fromSide":"right","toNode":"04db560adf1f6eb7","toSide":"left"},
+		{"id":"3919f41033049d6c","fromNode":"25a4967184096567","fromSide":"right","toNode":"9eb9f44bc0125074","toSide":"left","label":"分别编译"}
+	]
+}
