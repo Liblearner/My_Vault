@@ -113,10 +113,32 @@ ID与EX阶段的请求暂停信号。IF、MEM与WB的不需要因为其都可以
 ![[Pasted image 20240228211811.png]]
 
 ### 乘累命令
+共4条：madd、maddu、msub、msubu；格式如下
+![[Pasted image 20240229192759.png]]
++ madd rs, rt  {HI, LO} <= {HI, LO} + rs * rt。有符号数乘法
++ maddu rs, rt {HI, LO} <= {HI, LO} + rs * rt。 无符号数乘法
++ msub rs, rt {HI, LO} <= {HI, LO} - rs * rt。有符号数乘法
++ msubu rs, rt {HI, LO} <= {HI, LO} - rs * rt。无符号乘法
+
+实现时分两个周期进行运算。第一个周期完成乘法，第二个周期完成加减法、
+需要保存两个信息：
++ 当前是此命令的第几个周期 cnt
++ 乘法结果 hilo_temp
+通过在流水线暂停时，将计算结果送出，并使用EX内部的计数器控制运算
+![[Pasted image 20240229193304.png]]
 
 
 ### 除命令
+![[Pasted image 20240229212247.png]]
++ div rs, rt {HI, LO} <- rs/rt。有符号除法
++ divu rs, rt {HI, LO} <- rs/rt。无符号除法
 
+OpenMIPS使用试商法，对于32位的除法，至少需要32个时钟周期才能得到除法结果。算法过程描述略，类似于竖式计算过程：
+![[Pasted image 20240229213057.png]]
+
+![[Pasted image 20240229213151.png]]
+需要新增模块以完成试商法的实现
+![[Pasted image 20240229213521.png]]
 
 ## 实现
 ### 基本算数指令的计算如下。
@@ -712,3 +734,251 @@ end
 
 end
 ```
+
+### 累乘
+ID 部分：
+```verilog
+                    `MADD:begin
+
+                    aluop_o <= `EXE_MADD_OP;
+
+                    alusel_o <= `EXE_RES_MUL;
+
+                    reg1_read_o <= 1'b1;
+
+                    reg2_read_o <= 1'b1;
+
+                    wreg_o <= `WriteDisable;
+
+                    instvaild <= `Instvaild;
+
+                    end
+
+                    `MADDU:begin
+
+                    aluop_o <= `EXE_MADDU_OP;
+
+                    alusel_o <= `EXE_RES_MUL;
+
+                    reg1_read_o <= 1'b1;
+
+                    reg2_read_o <= 1'b1;
+
+                    wreg_o <= `WriteDisable;
+
+                    instvaild <= `Instvaild;
+
+                    end
+
+                    `MSUB:begin
+
+                    aluop_o <= `EXE_SUB_OP;
+
+                    alusel_o <= `EXE_RES_MUL;
+
+                    reg1_read_o <= 1'b1;
+
+                    reg2_read_o <= 1'b1;
+
+                    wreg_o <= `WriteDisable;
+
+                    instvaild <= `Instvaild;
+
+                    end
+
+                    `MSUBU:begin
+
+                    aluop_o <= `EXE_SUBU_OP;
+
+                    alusel_o <= `EXE_RES_MUL;
+
+                    reg1_read_o <= 1'b1;
+
+                    reg2_read_o <= 1'b1;
+
+                    wreg_o <= `WriteDisable;
+
+                    instvaild <= `InstVaild;
+
+                    end
+```
+EX部分：
+增加了指令周期计数与乘法结果暂存接口
+使用流水线暂停以实现多周期运算：
+```verilog
+always @(*) begin
+
+    if(rst == `RstEnable)begin
+
+        hilo_temp_o <= {`ZeroWord, `ZeroWord};
+
+        cnt_o <= 2'b00;
+
+        stallreq_for_madd_msub <= `NoStop;
+
+    end
+
+    else begin
+
+        case(aluop)
+
+        `EXE_MADD_OP, `EXE_MADDU_OP:begin
+
+            //双周期计算的第一个周期
+
+            if(cnt_i == 2'b00) begin
+
+                hilo_temp_o <= mulres;
+
+                cnt_o <= 2'b01;
+
+                hilo_temp1 <= {`ZeroWord, `ZeroWord};
+
+                stallreq_for_madd_msub <= `Stop;
+
+            end
+
+            //双周期计算的第二个周期
+
+            else if(cnt_i == 2'b01) begin
+
+                hilo_temp_o <= {`ZeroWord, `ZeroWord};
+
+                cnt_o <= 2'b10;
+
+                hilo_temp1 <= hilo_temp_i + {HI, LO};
+
+                stallreq_for_madd_msub <= `NoStop;
+
+            end
+
+        end
+
+        `EXE_MSUB_OP, `EXE_MSUBU_OP:begin
+
+            if(cnt_i == 2'b00) begin
+
+                hilo_temp_o <= ~mulres + 1;
+
+                cnt_o <= 2'b01;
+
+                hilo_temp1 <= {`ZeroWord, `ZeroWord};
+
+                stallreq_for_madd_msub <= `Stop;
+
+            end
+
+            else if(cnt_i == 2'b01)begin
+
+                hilo_temp_o <= {`ZeroWord, `ZeroWord};
+
+                cnt_o <= 2'b01;
+
+                hilo_temp1 <= hilo_temp_i + {HI, LO};
+
+                stallreq_for_madd_msub <= `Stop;
+
+            end
+
+        end
+
+        default:begin
+
+            hilo_temp_o <= {`ZeroWord, `ZeroWord};
+
+            cnt_o <= 2'b00;
+
+            stallreq_for_madd_msub <= `NoStop;
+
+        end
+
+        endcase
+
+    end
+
+end
+```
+EX/MEM的改动如下：
+在流水线暂停时，将输入信号通过输出接口hilo_o送出，输入信号cnt_i也从输出接口cnt_o送出
+其余时刻置0
+```verilog
+    always @(posedge clk) begin
+
+        if(rst == `RstEnable) begin
+
+        mem_wd <= `RegNopAddr;
+
+        mem_wreg <= 1'b0;
+
+        mem_wdata <= `RegNopData;
+
+  
+
+        mem_hi <= 32'b0;
+
+        mem_lo <= 32'b0;
+
+        mem_whilo <= 1'b0;
+
+  
+
+        hilo_o <= {`ZeroWord, `ZeroWord};
+
+        cnt_o <= 2'b00;
+
+        end
+
+  
+
+        else if(stall[3] == `Stop && stall[4] == `NoStop)begin
+
+        mem_wd <= `RegNopAddr;
+
+        mem_wreg <= `WriteDisable;
+
+        mem_wdata <= `ZeroWord;
+
+  
+
+        mem_hi <= `ZeroWord;
+
+        mem_Lo <= `ZeroWord;
+
+        mem_whilo <= `WriteDisable;
+
+  
+
+        hilo_o <= hilo_i;
+
+        cnt_o <= cnt_i;
+
+        end
+
+        else if(stall[3] == `NoStop)begin
+
+        mem_wd <= ex_wd;
+
+        mem_wdata <= ex_wdata;
+
+        mem_wreg <= ex_wreg;
+
+  
+
+        mem_hi <= ex_hi;
+
+        mem_lo <= ex_lo;
+
+        mem_whilo <= ex_whilo;
+
+  
+
+        hilo_o <= hilo_i;
+
+        cnt_o <= cnt_i;
+
+        end
+
+    end
+```
+### 除法
+新模块，试商法实现32bit除法运算
