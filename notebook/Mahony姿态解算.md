@@ -1,3 +1,6 @@
+
+## 前言
+
 讲解帖子：
 https://zhuanlan.zhihu.com/p/342703388
 官网源码：
@@ -7,8 +10,8 @@ https://krasjet.github.io/quaternion/quaternion.pdf
 
 融合加速度计，磁力计，陀螺仪共9轴数据，融合结算得到四元数
 也可以只融合6轴数据
-
-## 四元数
+## 概念
+### 四元数
 表示形式
 ![[Pasted image 20240306205248.png]]
 运算规则
@@ -27,7 +30,7 @@ https://krasjet.github.io/quaternion/quaternion.pdf
 四元数反解欧拉角：
 ![[Pasted image 20240306210135.png]]
 
-## 传感器数据融合
+### 传感器数据融合
 
 如何求解与更新四元数：
 四元数关于时间的微分方程
@@ -43,106 +46,395 @@ https://krasjet.github.io/quaternion/quaternion.pdf
 
 计算过程：误差补偿+反解欧拉角
 
+
+
+
+## 代码部分
+
+### 解算流程
+
+核心分为两个线程：CPU温控与VOFA上位机
 ```C
-```c
-/---------------------------------------------------------------------------------------------------
-// Definitions
+  /* Create the thread(s) */
 
-#define sampleFreq	1000.0f			// sample frequency in Hz
-#define twoKpDef	(2.0f * 0.5f)	// 2 * proportional gain
-#define twoKiDef	(2.0f * 0.0f)	// 2 * integral gain
+  /* definition and creation of TEMP_IMU */
 
-//---------------------------------------------------------------------------------------------------
-// Variable definitions
+  osThreadStaticDef(TEMP_IMU, imu_temp_control_task, osPriorityRealtime, 0, 1024, TEMP_IMUBuffer, &TEMP_IMUControlBlock);
 
-volatile float twoKp = twoKpDef;											// 2 * proportional gain (Kp)
-volatile float twoKi = twoKiDef;											// 2 * integral gain (Ki)
-//volatile float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;					// quaternion of sensor frame relative to auxiliary frame
-volatile float integralFBx = 0.0f,  integralFBy = 0.0f, integralFBz = 0.0f;	// integral error terms scaled by Ki
+  TEMP_IMUHandle = osThreadCreate(osThread(TEMP_IMU), NULL);
 
-void MahonyAHRSupdateIMU(float q[4], float gx, float gy, float gz, float ax, float ay, float az) {
-	float recipNorm;
-	float halfvx, halfvy, halfvz;
-	float halfex, halfey, halfez;
-	float qa, qb, qc;
+  
 
-	// Compute feedback only if accelerometer measurement valid (avoids NaN in accelerometer normalisation)
-    // 只在加速度计数据有效时才进行运算
-	if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
+  /* definition and creation of Vofa */
 
-		// Normalise accelerometer measurement
-        // 将加速度计得到的实际重力加速度向量v单位化
-		recipNorm = invSqrt(ax * ax + ay * ay + az * az); //该函数返回平方根的倒数
-		ax *= recipNorm;
-		ay *= recipNorm;
-		az *= recipNorm;        
+  osThreadStaticDef(Vofa, Vofa_Task, osPriorityIdle, 0, 512, VofaBuffer, &VofaControlBlock);
 
-		// Estimated direction of gravity
-        // 通过四元数得到理论重力加速度向量g 
-        // 注意，这里实际上是矩阵第三列*1/2，在开头对Kp Ki的宏定义均为2*增益
-        // 这样处理目的是减少乘法运算量
-		halfvx = q[1] * q[3] - q[0] * q[2];
-		halfvy = q[0] * q[1] + q[2] * q[3];
-		halfvz = q[0] * q[0] - 0.5f + q[3] * q[3];
-	
-		// Error is sum of cross product between estimated and measured direction of gravity
-        // 对实际重力加速度向量v与理论重力加速度向量g做外积
-		halfex = (ay * halfvz - az * halfvy);
-		halfey = (az * halfvx - ax * halfvz);
-		halfez = (ax * halfvy - ay * halfvx);
+  VofaHandle = osThreadCreate(osThread(Vofa), NULL);
+```
 
-		// Compute and apply integral feedback if enabled
-        // 在PI补偿器中积分项使能情况下计算并应用积分项
-		if(twoKi > 0.0f) {
-            // integral error scaled by Ki
-            // 积分过程
-			integralFBx += twoKi * halfex * (1.0f / sampleFreq);	
-			integralFBy += twoKi * halfey * (1.0f / sampleFreq);
-			integralFBz += twoKi * halfez * (1.0f / sampleFreq);
-            
-            // apply integral feedback
-            // 应用误差补偿中的积分项
-			gx += integralFBx;	
-			gy += integralFBy;
-			gz += integralFBz;
-		}
-		else {
-            // prevent integral windup
-            // 避免为负值的Ki时积分异常饱和
-			integralFBx = 0.0f;	
-			integralFBy = 0.0f;
-			integralFBz = 0.0f;
-		}
+imu_temp_control_task中进行如下任务：
 
-		// Apply proportional feedback
-        // 应用误差补偿中的比例项
-		gx += twoKp * halfex;
-		gy += twoKp * halfey;
-		gz += twoKp * halfez;
-	}
-	
-	// Integrate rate of change of quaternion
-    // 微分方程迭代求解
-	gx *= (0.5f * (1.0f / sampleFreq));		// pre-multiply common factors
-	gy *= (0.5f * (1.0f / sampleFreq));
-	gz *= (0.5f * (1.0f / sampleFreq));
-	qa = q[0];
-	qb = q[1];
-	qc = q[2];
-	q[0] += (-qb * gx - qc * gy - q[3] * gz); 
-	q[1] += (qa * gx + qc * gz - q[3] * gy);
-	q[2] += (qa * gy - qb * gz + q[3] * gx);
-	q[3] += (qa * gz + qb * gy - qc * gx); 
-	
-	// Normalise quaternion
-    // 单位化四元数 保证四元数在迭代过程中保持单位性质
-	recipNorm = invSqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
-	q[0] *= recipNorm;
-	q[1] *= recipNorm;
-	q[2] *= recipNorm;
-	q[3] *= recipNorm;
-    
-    //Mahony官方程序到此结束，使用时只需在函数外进行四元数反解欧拉角即可完成全部姿态解算过程
+```C
+__weak void imu_temp_control_task(void const * argument)
+
+{
+
+  /* init code for USB_DEVICE */
+
+  MX_USB_DEVICE_Init();
+
+  /* USER CODE BEGIN imu_temp_control_task */
+
+    Imu_Init();
+
+  /* Infinite loop */
+
+  for(;;)
+
+  {
+
+    INS_Task();//调用姿态解算
+
+    osDelay(1);
+
+  }
+
+  /* USER CODE END imu_temp_control_task */
+
 }
 ```
+
+Imu_init()：
+
+```C 
+/*EKF初始化
+温控初始化
+Mahony初始化
+*/
+void Imu_Init()
+
+{
+
+  IMU_QuaternionEKF_Init(10, 0.001, 10000000, 1, 0.001f,0); //ekf初始化
+
+  PID_init(&imu_temp_pid, PID_POSITION, imu_temp_PID, TEMPERATURE_PID_MAX_OUT, TEMPERATURE_PID_MAX_IOUT);
+
+  Mahony_Init(1000);  //mahony姿态解算初始化
+
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+
+  while(BMI088_init()){}
+
+    //set spi frequency
+
+//  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+
+//  if (HAL_SPI_Init(&hspi2) != HAL_OK)
+
+//  {
+
+//    Error_Handler();
+
+//  }
+
+}
+```
+INS_Task();
+
+姿态解算部分：
++ 1s的陀螺仪0漂初始化
+姿态解算
++ 陀螺仪读+Mahony初始化
++ EKF解算
+	+ 去0漂
+	+ 输入六轴，输出更新后的四元数
+	+ Mahony姿态解算
+	+ 角度计算，获得roll，yaw，pitch
+
+
+```C
+void INS_Task()
+
+{
+
+    static uint32_t count = 0;
+
+  
+
+    // ins update
+
+    if ((count % 1) == 0)
+
+    {
+
+        BMI088_read(gyro, accel, &temp);
+
+        if(first_mahony==0)
+
+        {
+
+          first_mahony++;
+
+          MahonyAHRSinit(accel[0],accel[1],accel[2],0,0,0);  
+
+        }
+
+        if(attitude_flag==2)  //ekf的姿态解算
+
+        {
+
+          gyro[0]-=gyro_correct[0];   //减去陀螺仪0飘
+
+          gyro[1]-=gyro_correct[1];
+
+          gyro[2]-=gyro_correct[2];
+
+          //===========================================================================
+
+            //ekf姿态解算部分
+
+          //HAL_GPIO_WritePin(GPIOC,GPIO_PIN_9,GPIO_PIN_SET);
+
+          IMU_QuaternionEKF_Update(gyro[0],gyro[1],gyro[2],accel[0],accel[1],accel[2]);
+
+          //HAL_GPIO_WritePin(GPIOC,GPIO_PIN_9,GPIO_PIN_RESET);
+
+          //===============================================================================
+
+          //=================================================================================
+
+          //mahony姿态解算部分
+
+          //HAL_GPIO_WritePin(GPIOE,GPIO_PIN_13,GPIO_PIN_SET);
+
+          Mahony_update(gyro[0],gyro[1],gyro[2],accel[0],accel[1],accel[2],0,0,0);
+
+          Mahony_computeAngles(); //角度计算   移植到别的平台需要替换掉对应的arm_atan2_f32 和 arm_asin
+
+          //HAL_GPIO_WritePin(GPIOE,GPIO_PIN_13,GPIO_PIN_RESET);
+
+          //=============================================================================
+
+          //ekf获取姿态角度函数
+
+          pitch=Get_Pitch(); //获得pitch
+
+          roll=Get_Roll();//获得roll
+
+          yaw=Get_Yaw();//获得yaw
+
+          //==============================================================================
+
+        }
+
+        else if(attitude_flag==1)   //状态1 开始1000次的陀螺仪0飘初始化
+
+        {
+
+            //gyro correct
+
+            gyro_correct[0]+= gyro[0];
+
+            gyro_correct[1]+= gyro[1];
+
+            gyro_correct[2]+= gyro[2];
+
+            correct_times++;
+
+            if(correct_times>=correct_Time_define)
+
+            {
+
+              gyro_correct[0]/=correct_Time_define;
+
+              gyro_correct[1]/=correct_Time_define;
+
+              gyro_correct[2]/=correct_Time_define;
+
+              attitude_flag=2; //go to 2 state
+
+            }
+
+        }
+
+    }
+
+// temperature control
+
+    if ((count % 10) == 0)
+
+    {
+
+        // 100hz 的温度控制pid
+
+        IMU_Temperature_Ctrl();
+
+        static uint32_t temp_Ticks=0;
+
+        if((fabsf(temp-Destination_TEMPERATURE)<0.5f)&&attitude_flag==0) //接近额定温度之差小于0.5° 开始计数
+
+        {
+
+          temp_Ticks++;
+
+          if(temp_Ticks>temp_times)   //计数达到一定次数后 才进入0飘初始化 说明温度已经达到目标
+
+          {
+
+            attitude_flag=1;  //go to correct state
+
+          }
+
+        }
+
+    }
+
+    count++;
+
+}
+```
+
+
+### 运算库
+MahonyAHRS.h：
+姿态解算库
+```C
+#ifndef MahonyAHRS_h
+
+#define MahonyAHRS_h
+
+void Mahony_update(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz);
+
+void Mahony_Init(float sampleFrequency);
+
+void MahonyAHRSupdateIMU(float gx, float gy, float gz, float ax, float ay, float az);
+
+void Mahony_computeAngles(void);
+
+void MahonyAHRSinit(float ax, float ay, float az, float mx, float my, float mz);
+
+//获取角度制角度
+float getRoll(void);
+
+float getPitch(void);
+
+float getYaw(void);
+//获取弧度制角度
+float getRollRadians(void);
+
+float getPitchRadians(void);
+
+float getYawRadians(void);
+
+#endif
+```
+
+Quaernion.h
+EKF应用到四元数的库
+```C
+typedef struct
+
+{
+
+    uint8_t Initialized;
+
+    KalmanFilter_t IMU_QuaternionEKF;
+
+    uint8_t ConvergeFlag;
+
+    uint8_t StableFlag;
+
+    uint64_t ErrorCount;
+
+    uint64_t UpdateCount;
+
+  
+
+    float q[4];        // 四元数估计值
+
+    float GyroBias[3]; // 陀螺仪零偏估计值
+
+  
+
+    float Gyro[3];
+
+    float Accel[3];
+
+  
+
+    float OrientationCosine[3];
+
+  
+
+    float accLPFcoef;
+
+    float gyro_norm;
+
+    float accl_norm;
+
+    float AdaptiveGainScale;
+
+  
+
+    float Roll;
+
+    float Pitch;
+
+    float Yaw;
+
+  
+
+    float YawTotalAngle;
+
+  
+
+    float Q1; // 四元数更新过程噪声
+
+    float Q2; // 陀螺仪零偏过程噪声
+
+    float R;  // 加速度计量测噪声
+
+  
+
+    float dt; // 姿态更新周期
+
+    mat ChiSquare;
+
+    float ChiSquare_Data[1];      // 卡方检验检测函数
+
+    float ChiSquareTestThreshold; // 卡方检验阈值
+
+    float lambda;                 // 渐消因子
+
+  
+
+    int16_t YawRoundCount;
+
+  
+
+    float YawAngleLast;
+
+} QEKF_INS_t;
+
+  
+
+extern QEKF_INS_t QEKF_INS;
+
+extern float chiSquare;
+
+extern float ChiSquareTestThreshold;
+
+void IMU_QuaternionEKF_Init(float process_noise1, float process_noise2, float measure_noise, float lambda, float dt, float lpf);
+
+void IMU_QuaternionEKF_Update(float gx, float gy, float gz, float ax, float ay, float az);
+
+void IMU_QuaternionEKF_Reset(void);
+
+  
+
+float Get_Pitch(void);//get pitch
+
+float Get_Roll(void);//get roll
+
+float Get_Yaw(void);//get yaw
 ```
